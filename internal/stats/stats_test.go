@@ -85,24 +85,24 @@ func TestGatherSchema_MixedPlainAndJSON(t *testing.T) {
 		makePlainEntry("plain text again", ts.Add(2*time.Second), "web"),
 	}
 
-	schema := GatherSchema(entries)
+	schema := GatherSchema(entries, 20)
 
 	// "message" should appear for all 3 entries.
-	if schema["message"] != 3 {
-		t.Errorf("expected message count 3, got %d", schema["message"])
+	if schema["message"].Count != 3 {
+		t.Errorf("expected message count 3, got %d", schema["message"].Count)
 	}
 
 	// "message_json" should appear only for the JSON entry.
-	if schema["message_json"] != 1 {
-		t.Errorf("expected message_json count 1, got %d", schema["message_json"])
+	if schema["message_json"].Count != 1 {
+		t.Errorf("expected message_json count 1, got %d", schema["message_json"].Count)
 	}
 
 	// Nested paths from message_json.
-	if schema["message_json.level"] != 1 {
-		t.Errorf("expected message_json.level count 1, got %d", schema["message_json.level"])
+	if schema["message_json.level"].Count != 1 {
+		t.Errorf("expected message_json.level count 1, got %d", schema["message_json.level"].Count)
 	}
-	if schema["message_json.class"] != 1 {
-		t.Errorf("expected message_json.class count 1, got %d", schema["message_json.class"])
+	if schema["message_json.class"].Count != 1 {
+		t.Errorf("expected message_json.class count 1, got %d", schema["message_json.class"].Count)
 	}
 }
 
@@ -124,22 +124,22 @@ func TestGatherSchema_NestedJSON(t *testing.T) {
 		makeJSONEntry(inner, `{"level":"debug","message_json":{"component":"AuthService","action":"login"}}`, ts, "web"),
 	}
 
-	schema := GatherSchema(entries)
+	schema := GatherSchema(entries, 20)
 
 	// Should have the deeply nested path.
-	if schema["message_json.message_json.component"] != 1 {
+	if schema["message_json.message_json.component"].Count != 1 {
 		t.Errorf("expected message_json.message_json.component count 1, got %d",
-			schema["message_json.message_json.component"])
+			schema["message_json.message_json.component"].Count)
 	}
-	if schema["message_json.message_json.action"] != 1 {
+	if schema["message_json.message_json.action"].Count != 1 {
 		t.Errorf("expected message_json.message_json.action count 1, got %d",
-			schema["message_json.message_json.action"])
+			schema["message_json.message_json.action"].Count)
 	}
 
 	// Intermediate path should also be counted.
-	if schema["message_json.message_json"] != 1 {
+	if schema["message_json.message_json"].Count != 1 {
 		t.Errorf("expected message_json.message_json count 1, got %d",
-			schema["message_json.message_json"])
+			schema["message_json.message_json"].Count)
 	}
 }
 
@@ -154,7 +154,7 @@ func TestGatherSchema_KeysSortable(t *testing.T) {
 		),
 	}
 
-	schema := GatherSchema(entries)
+	schema := GatherSchema(entries, 20)
 
 	var keys []string
 	for k := range schema {
@@ -173,6 +173,218 @@ func TestGatherSchema_KeysSortable(t *testing.T) {
 	}
 }
 
+func TestGatherSchema_ValuesTracking(t *testing.T) {
+	ts := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	entries := []parser.LogEntry{
+		makeJSONEntry(
+			map[string]any{"level": "info", "active": true},
+			`{"level":"info","active":true}`,
+			ts, "web",
+		),
+		makeJSONEntry(
+			map[string]any{"level": "error", "active": false},
+			`{"level":"error","active":false}`,
+			ts.Add(time.Second), "web",
+		),
+		makeJSONEntry(
+			map[string]any{"level": "info", "active": true},
+			`{"level":"info","active":true}`,
+			ts.Add(2*time.Second), "web",
+		),
+	}
+
+	schema := GatherSchema(entries, 20)
+
+	// "level" should have 2 distinct values: "info" and "error".
+	fs := schema["level"]
+	if fs == nil {
+		t.Fatal("expected 'level' in schema")
+	}
+	if fs.Count != 3 {
+		t.Errorf("expected level count 3, got %d", fs.Count)
+	}
+	if len(fs.Values) != 2 {
+		t.Errorf("expected 2 distinct values for level, got %d: %v", len(fs.Values), fs.Values)
+	}
+
+	// "active" should have 2 distinct values: true and false.
+	fs = schema["active"]
+	if fs == nil {
+		t.Fatal("expected 'active' in schema")
+	}
+	if len(fs.Values) != 2 {
+		t.Errorf("expected 2 distinct values for active, got %d: %v", len(fs.Values), fs.Values)
+	}
+}
+
+func TestGatherSchema_ValuesExceedThreshold(t *testing.T) {
+	ts := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	// Create entries with 5 distinct levels, but set maxValues=3.
+	var entries []parser.LogEntry
+	levels := []string{"info", "warn", "error", "debug", "trace"}
+	for i, lvl := range levels {
+		entries = append(entries, makeJSONEntry(
+			map[string]any{"level": lvl},
+			`{"level":"`+lvl+`"}`,
+			ts.Add(time.Duration(i)*time.Second), "web",
+		))
+	}
+
+	schema := GatherSchema(entries, 3)
+
+	fs := schema["level"]
+	if fs == nil {
+		t.Fatal("expected 'level' in schema")
+	}
+	if fs.Count != 5 {
+		t.Errorf("expected count 5, got %d", fs.Count)
+	}
+	// Values should be nil because 5 > 3.
+	if fs.Values != nil {
+		t.Errorf("expected nil values when exceeding threshold, got %v", fs.Values)
+	}
+}
+
+func TestGatherSchema_NumbersNotTracked(t *testing.T) {
+	ts := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	entries := []parser.LogEntry{
+		makeJSONEntry(
+			map[string]any{"status": 200.0},
+			`{"status":200}`,
+			ts, "web",
+		),
+	}
+
+	schema := GatherSchema(entries, 20)
+
+	fs := schema["status"]
+	if fs == nil {
+		t.Fatal("expected 'status' in schema")
+	}
+	// Numbers should not be tracked.
+	if fs.Values != nil {
+		t.Errorf("expected nil values for numeric field, got %v", fs.Values)
+	}
+}
+
+func TestGatherSchema_EmptyStringsSkipped(t *testing.T) {
+	ts := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	entries := []parser.LogEntry{
+		makeJSONEntry(
+			map[string]any{"tag": ""},
+			`{"tag":""}`,
+			ts, "web",
+		),
+		makeJSONEntry(
+			map[string]any{"tag": "important"},
+			`{"tag":"important"}`,
+			ts.Add(time.Second), "web",
+		),
+	}
+
+	schema := GatherSchema(entries, 20)
+
+	fs := schema["tag"]
+	if fs == nil {
+		t.Fatal("expected 'tag' in schema")
+	}
+	if fs.Count != 2 {
+		t.Errorf("expected count 2, got %d", fs.Count)
+	}
+	// Only "important" would be tracked (empty string skipped), but single-value
+	// fields are dropped since they're not useful for filtering.
+	if fs.Values != nil {
+		t.Errorf("expected nil values for single-value field, got %v", fs.Values)
+	}
+}
+
+func TestGatherSchema_DisableValueTracking(t *testing.T) {
+	ts := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	entries := []parser.LogEntry{
+		makeJSONEntry(
+			map[string]any{"level": "info"},
+			`{"level":"info"}`,
+			ts, "web",
+		),
+	}
+
+	schema := GatherSchema(entries, 0)
+
+	fs := schema["level"]
+	if fs == nil {
+		t.Fatal("expected 'level' in schema")
+	}
+	if fs.Values != nil {
+		t.Errorf("expected nil values when tracking disabled, got %v", fs.Values)
+	}
+}
+
+func TestGatherSchema_LongStringsSkipped(t *testing.T) {
+	ts := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	longVal := strings.Repeat("x", 101)
+	entries := []parser.LogEntry{
+		makeJSONEntry(
+			map[string]any{"token": longVal, "level": "info"},
+			`{"token":"...","level":"info"}`,
+			ts, "web",
+		),
+		makeJSONEntry(
+			map[string]any{"token": longVal, "level": "error"},
+			`{"token":"...","level":"error"}`,
+			ts.Add(time.Second), "web",
+		),
+	}
+
+	schema := GatherSchema(entries, 20)
+
+	// Long strings should not be tracked.
+	if schema["token"].Values != nil {
+		t.Errorf("expected nil values for long string field, got %v", schema["token"].Values)
+	}
+
+	// Short strings should still be tracked.
+	if len(schema["level"].Values) != 2 {
+		t.Errorf("expected 2 values for level, got %d", len(schema["level"].Values))
+	}
+}
+
+func TestGatherSchema_SingleValueDropped(t *testing.T) {
+	ts := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	entries := []parser.LogEntry{
+		makeJSONEntry(
+			map[string]any{"env": "prod"},
+			`{"env":"prod"}`,
+			ts, "web",
+		),
+		makeJSONEntry(
+			map[string]any{"env": "prod"},
+			`{"env":"prod"}`,
+			ts.Add(time.Second), "web",
+		),
+	}
+
+	schema := GatherSchema(entries, 20)
+
+	// Single distinct value — not useful for filtering.
+	fs := schema["env"]
+	if fs == nil {
+		t.Fatal("expected 'env' in schema")
+	}
+	if fs.Count != 2 {
+		t.Errorf("expected count 2, got %d", fs.Count)
+	}
+	if fs.Values != nil {
+		t.Errorf("expected nil values for single-value field, got %v", fs.Values)
+	}
+}
+
 // --- walkPaths tests ---
 
 func TestWalkPaths_FlatObject(t *testing.T) {
@@ -182,18 +394,22 @@ func TestWalkPaths_FlatObject(t *testing.T) {
 		"email": "alice@example.com",
 	}
 
-	counts := make(map[string]int)
-	walkPaths(obj, "root", counts)
+	schema := make(map[string]*FieldSchema)
+	walkPaths(obj, "root", schema, 20)
 
 	expected := []string{"root.name", "root.age", "root.email"}
 	for _, p := range expected {
-		if counts[p] != 1 {
-			t.Errorf("expected %s count 1, got %d", p, counts[p])
+		if schema[p] == nil || schema[p].Count != 1 {
+			count := 0
+			if schema[p] != nil {
+				count = schema[p].Count
+			}
+			t.Errorf("expected %s count 1, got %d", p, count)
 		}
 	}
 
-	if len(counts) != len(expected) {
-		t.Errorf("expected %d paths, got %d", len(expected), len(counts))
+	if len(schema) != len(expected) {
+		t.Errorf("expected %d paths, got %d", len(expected), len(schema))
 	}
 }
 
@@ -208,8 +424,8 @@ func TestWalkPaths_NestedObject(t *testing.T) {
 		"status": "active",
 	}
 
-	counts := make(map[string]int)
-	walkPaths(obj, "data", counts)
+	schema := make(map[string]*FieldSchema)
+	walkPaths(obj, "data", schema, 20)
 
 	expectedPaths := map[string]int{
 		"data.user":              1,
@@ -220,13 +436,18 @@ func TestWalkPaths_NestedObject(t *testing.T) {
 	}
 
 	for path, want := range expectedPaths {
-		if counts[path] != want {
-			t.Errorf("path %q: expected %d, got %d", path, want, counts[path])
+		fs := schema[path]
+		got := 0
+		if fs != nil {
+			got = fs.Count
+		}
+		if got != want {
+			t.Errorf("path %q: expected %d, got %d", path, want, got)
 		}
 	}
 
-	if len(counts) != len(expectedPaths) {
-		t.Errorf("expected %d paths, got %d: %v", len(expectedPaths), len(counts), counts)
+	if len(schema) != len(expectedPaths) {
+		t.Errorf("expected %d paths, got %d: %v", len(expectedPaths), len(schema), schema)
 	}
 }
 

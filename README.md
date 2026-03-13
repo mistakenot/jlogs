@@ -175,7 +175,8 @@ File names are irrelevant — `jlogs` reads actual content to determine what's i
 | `--before` | | Absolute end time (RFC 3339). |
 | `--dir` | `-d` | Log directory path. Default: `~/.pm2/logs/`. |
 | `--stats` | | Show summary stats instead of log lines. Cannot be combined with `--schema`. |
-| `--schema` | | Output a JSON object mapping every field path to its occurrence count. Cannot be combined with `--stats`. |
+| `--schema` | | Output a JSON object mapping every field path to its count and distinct values. Cannot be combined with `--stats`. |
+| `--schema-values` | | Max distinct values to track per field in schema mode (default 20, 0 to disable). |
 | `--help` | `-h` | Show help with usage examples. |
 | `--version` | `-v` | Print version and exit. |
 
@@ -230,7 +231,7 @@ Use --app <name> to filter. Glob patterns are supported (e.g. --app "cc*").
 
 `jlogs` always outputs compact JSONL (one JSON object per line). Every valid PM2 log line produces an output line.
 
-When a query matches zero log entries, `jlogs` outputs `[]` to stdout and prints `No matching results found.` to stderr.
+When a query matches zero log entries, `jlogs` writes nothing to stdout and prints `No matching results found.` to stderr.
 
 ### JSON message unwrapping
 
@@ -277,17 +278,26 @@ Scan log data and output a JSON object showing every unique field path and how m
 ```bash
 $ jlogs --app web --since 1h --schema
 {
-  "class": 3200,
-  "level": 3455,
-  "message": 4433,
-  "message_json": 3455,
-  "message_json.class": 3200,
-  "message_json.level": 3455,
-  "pm2_app_name": 4433,
-  "pm2_timestamp": 4433,
-  "timestamp": 3455
+  "class": {"count": 3200, "values": ["ClientLogsService", "AuthService", "TrainSync"]},
+  "level": {"count": 3455, "values": ["info", "warn", "error", "debug"]},
+  "message": {"count": 4433},
+  "message_json": {"count": 3455},
+  "message_json.class": {"count": 3200, "values": ["ClientLogsService", "AuthService", "TrainSync"]},
+  "message_json.level": {"count": 3455, "values": ["info", "warn", "error", "debug"]},
+  "pm2_app_name": {"count": 4433},
+  "pm2_timestamp": {"count": 4433},
+  "pm2_type": {"count": 4433, "values": ["out", "err"]}
 }
 ```
+
+Each field path maps to an object with `count` (number of log lines containing this field). For string and boolean fields with 2–20 distinct values, a `values` array is included — useful for discovering what you can filter on without a second query. Values are omitted when:
+
+- The field has too many distinct values (exceeds `--schema-values` threshold, default 20)
+- The field type is not filterable (numbers, objects, arrays)
+- The field has only one distinct value (not useful for filtering)
+- A string value exceeds 100 characters (long tokens, blobs, etc.)
+
+Use `--schema-values N` to change the distinct-value threshold, or `--schema-values 0` to disable value tracking entirely.
 
 Uses the same `--app` and time filters as a normal query, so the schema reflects exactly the data you'd be querying.
 

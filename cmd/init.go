@@ -35,7 +35,7 @@ Run ` + "`jlogs --help`" + ` for full usage, or try:
 ` + "```bash" + `
 jlogs --since 30m              # list available apps
 jlogs --app <name> --since 30m # last 30 min of logs as JSONL
-jlogs --app <name> --since 1h --schema  # discover available fields
+jlogs --app <name> --since 1h --schema  # discover fields and filterable values
 jlogs --app <name> --since 1h | jq .    # pretty-print with jq
 ` + "```" + `
 `

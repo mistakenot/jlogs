@@ -20,14 +20,15 @@ import (
 )
 
 var (
-	appFlag    string
-	sinceFlag  string
-	afterFlag  string
-	beforeFlag string
-	dirFlag    string
-	statsFlag  bool
-	schemaFlag bool
-	version    = "dev"
+	appFlag       string
+	sinceFlag     string
+	afterFlag     string
+	beforeFlag    string
+	dirFlag       string
+	statsFlag     bool
+	schemaFlag    bool
+	schemaMaxFlag int
+	version       = "dev"
 )
 
 var rootCmd = &cobra.Command{
@@ -97,6 +98,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&dirFlag, "dir", "d", "", `Log directory (default "~/.pm2/logs/")`)
 	rootCmd.Flags().BoolVar(&statsFlag, "stats", false, "Show summary stats instead of log lines")
 	rootCmd.Flags().BoolVar(&schemaFlag, "schema", false, "Output field paths with occurrence counts as JSON")
+	rootCmd.Flags().IntVar(&schemaMaxFlag, "schema-values", 20, "Max distinct values to track per field in schema mode (0 to disable)")
 }
 
 func Execute() {
@@ -185,7 +187,7 @@ func run(cmd *cobra.Command, args []string) error {
 		// Distinguish: does the app exist but no logs match the time range?
 		if appExistsInScan(scanResult, appFlag) {
 			if schemaFlag {
-				return outputSchema(map[string]int{})
+				return outputSchema(map[string]*stats.FieldSchema{})
 			}
 			return printNoLogsInTimeRange(appFlag, tf)
 		}
@@ -200,7 +202,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// Schema mode
 	if schemaFlag {
-		schema := stats.GatherSchema(entries)
+		schema := stats.GatherSchema(entries, schemaMaxFlag)
 		return outputSchema(schema)
 	}
 
@@ -267,7 +269,7 @@ func runFromReader(r io.Reader, appPattern string, tf filter.TimeFilter) error {
 	}
 
 	if schemaFlag {
-		schema := stats.GatherSchema(entries)
+		schema := stats.GatherSchema(entries, schemaMaxFlag)
 		return outputSchema(schema)
 	}
 
@@ -277,7 +279,6 @@ func runFromReader(r io.Reader, appPattern string, tf filter.TimeFilter) error {
 
 func outputEntries(entries []parser.LogEntry) error {
 	if len(entries) == 0 {
-		fmt.Fprintln(os.Stdout, "[]")
 		fmt.Fprintln(os.Stderr, "No matching results found.")
 		return nil
 	}
@@ -296,7 +297,7 @@ func outputEntries(entries []parser.LogEntry) error {
 	return nil
 }
 
-func outputSchema(schema map[string]int) error {
+func outputSchema(schema map[string]*stats.FieldSchema) error {
 	// Sort keys for deterministic output
 	keys := make([]string, 0, len(schema))
 	for k := range schema {
@@ -311,7 +312,15 @@ func outputSchema(schema map[string]int) error {
 	w.WriteString("{\n")
 	for i, k := range keys {
 		kb, _ := json.Marshal(k)
-		fmt.Fprintf(w, "  %s: %d", string(kb), schema[k])
+		fs := schema[k]
+		fmt.Fprintf(w, "  %s: {\"count\": %d", string(kb), fs.Count)
+		if fs.Values != nil {
+			valBytes, err := json.Marshal(fs.Values)
+			if err == nil {
+				fmt.Fprintf(w, ", \"values\": %s", valBytes)
+			}
+		}
+		w.WriteByte('}')
 		if i < len(keys)-1 {
 			w.WriteByte(',')
 		}
@@ -347,7 +356,6 @@ func appExistsInScan(result scanner.ScanResult, appPattern string) bool {
 }
 
 func printNoLogsInTimeRange(appPattern string, tf filter.TimeFilter) error {
-	fmt.Fprintln(os.Stdout, "[]")
 	var timeDesc string
 	if !tf.After.IsZero() && !tf.Before.IsZero() {
 		timeDesc = fmt.Sprintf("between %s and %s", tf.After.Format(time.RFC3339), tf.Before.Format(time.RFC3339))

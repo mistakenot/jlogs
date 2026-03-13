@@ -38,9 +38,10 @@ Follow these steps for every commit after finishing work:
 1. `gofmt -w .` — format all Go files
 2. `go build -o jlogs .` — compile
 3. `go test ./...` — run all tests
-4. `git add` and `git commit` with a descriptive message
-5. `git push`
-6. If releasing: `git tag vX.Y.Z && git push --tags` (semantic versioning)
+4. Update `todo.md` to reflect completed/remaining work
+5. `git add` and `git commit` with a descriptive message
+6. `git push`
+7. If releasing: `git tag vX.Y.Z && git push --tags` (semantic versioning)
 
 ## Architecture
 
@@ -56,7 +57,7 @@ Scanner → Selection → Parser → Filter → Merge → Output (JSONL)
 - **`internal/parser/`** — Parses PM2 JSON lines, unwraps nested JSON messages (up to 2 levels deep), flattens inner fields to top level. Uses ordered field lists (not maps) to preserve JSON output order.
 - **`internal/filter/`** — Time range filtering (relative durations like `30m`, absolute RFC 3339) and app name glob matching.
 - **`internal/merge/`** — Merge-sorts entries from multiple files by timestamp using `slices.SortStableFunc`.
-- **`internal/stats/`** — Gathers per-app statistics and schema (field path occurrence counts).
+- **`internal/stats/`** — Gathers per-app statistics and schema (field path counts + distinct values for filterable fields). Value tracking skips: numbers, objects, strings >100 chars, empty strings; drops single-value fields since they're not useful for filtering.
 
 ## Key Design Decisions
 

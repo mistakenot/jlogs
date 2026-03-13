@@ -194,32 +194,95 @@ func formatTimeRange(start, end time.Time) string {
 	)
 }
 
+// FieldSchema holds the count and optionally the distinct values for a field path.
+type FieldSchema struct {
+	Count   int
+	Values  []any            // nil when distinct values exceed maxValues or field type is not trackable
+	values  map[any]struct{} // internal tracking set
+	stopped bool             // true when value tracking has been permanently disabled
+}
+
 // GatherSchema walks every LogEntry's Fields and counts occurrences of each
 // dot-delimited field path. For nested values (map[string]any), it recurses
-// with a dot-delimited prefix.
-func GatherSchema(entries []parser.LogEntry) map[string]int {
-	counts := make(map[string]int)
+// with a dot-delimited prefix. When a field has maxValues or fewer distinct
+// string/boolean values, those values are collected. Pass 0 to disable value tracking.
+func GatherSchema(entries []parser.LogEntry, maxValues int) map[string]*FieldSchema {
+	schema := make(map[string]*FieldSchema)
 
 	for _, entry := range entries {
 		for _, f := range entry.Fields {
-			counts[f.Key]++
+			trackField(schema, f.Key, f.Value, maxValues)
 			if m, ok := f.Value.(map[string]any); ok {
-				walkPaths(m, f.Key, counts)
+				walkPaths(m, f.Key, schema, maxValues)
 			}
 		}
 	}
 
-	return counts
+	// Finalize: convert internal sets to slices; drop single-value fields
+	// since they're not useful for filtering.
+	for _, fs := range schema {
+		if fs.values != nil && len(fs.values) >= 2 {
+			fs.Values = make([]any, 0, len(fs.values))
+			for v := range fs.values {
+				fs.Values = append(fs.Values, v)
+			}
+		}
+		fs.values = nil
+	}
+
+	return schema
 }
 
-// walkPaths recursively walks a map and increments counts for each
+// trackField updates the schema entry for a given path, incrementing count
+// and optionally tracking distinct values for strings and booleans.
+func trackField(schema map[string]*FieldSchema, path string, value any, maxValues int) {
+	fs, ok := schema[path]
+	if !ok {
+		fs = &FieldSchema{}
+		schema[path] = fs
+	}
+	fs.Count++
+
+	if maxValues <= 0 || fs.stopped {
+		return
+	}
+
+	// Only track strings and booleans; skip null, empty strings, numbers, and complex types.
+	switch v := value.(type) {
+	case string:
+		if v == "" || len(v) > 100 {
+			return
+		}
+		if fs.values == nil {
+			fs.values = make(map[any]struct{})
+		}
+		fs.values[v] = struct{}{}
+	case bool:
+		if fs.values == nil {
+			fs.values = make(map[any]struct{})
+		}
+		fs.values[v] = struct{}{}
+	default:
+		// Not a trackable type (number, map, slice, nil) — stop tracking.
+		fs.stopped = true
+		fs.values = nil
+		return
+	}
+
+	if len(fs.values) > maxValues {
+		fs.stopped = true
+		fs.values = nil
+	}
+}
+
+// walkPaths recursively walks a map and updates schema for each
 // dot-delimited path. Both intermediate and leaf paths are counted.
-func walkPaths(obj map[string]any, prefix string, counts map[string]int) {
+func walkPaths(obj map[string]any, prefix string, schema map[string]*FieldSchema, maxValues int) {
 	for k, v := range obj {
 		path := prefix + "." + k
-		counts[path]++
+		trackField(schema, path, v, maxValues)
 		if m, ok := v.(map[string]any); ok {
-			walkPaths(m, path, counts)
+			walkPaths(m, path, schema, maxValues)
 		}
 	}
 }

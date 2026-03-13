@@ -3,10 +3,12 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +41,11 @@ func TestMain(m *testing.M) {
 func testdataDir() string {
 	_, filename, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(filename), "..", "testdata")
+}
+
+func e2eTestdataDir() string {
+	_, filename, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(filename), "testdata")
 }
 
 func runJlogs(t *testing.T, args ...string) (stdout, stderr string, exitCode int) {
@@ -247,26 +254,116 @@ func TestStatsMode(t *testing.T) {
 	}
 }
 
-func TestSchemaFlag(t *testing.T) {
+// normalizeSchemaJSON parses schema JSON and re-serializes with sorted keys
+// and sorted values arrays for deterministic comparison.
+func normalizeSchemaJSON(t *testing.T, data string) string {
+	t.Helper()
+	var schema map[string]map[string]any
+	if err := json.Unmarshal([]byte(data), &schema); err != nil {
+		t.Fatalf("schema is not valid JSON: %v", err)
+	}
+	// Sort values arrays for deterministic comparison
+	for _, entry := range schema {
+		if vals, ok := entry["values"].([]any); ok {
+			sortAnySlice(vals)
+		}
+	}
+	out, err := json.MarshalIndent(schema, "", "  ")
+	if err != nil {
+		t.Fatalf("failed to marshal normalized schema: %v", err)
+	}
+	return string(out)
+}
+
+func sortAnySlice(s []any) {
+	sort.Slice(s, func(i, j int) bool {
+		return fmt.Sprint(s[i]) < fmt.Sprint(s[j])
+	})
+}
+
+func TestSchemaFlag_Snapshot(t *testing.T) {
 	stdout, _, exitCode := runJlogs(t, "--app", "web", "--since", "8760h", "--dir", testdataDir(), "--schema")
 	if exitCode != 0 {
-		t.Errorf("expected exit code 0, got %d", exitCode)
+		t.Fatalf("expected exit code 0, got %d", exitCode)
 	}
-	var schema map[string]any
+
+	snapshotPath := filepath.Join(e2eTestdataDir(), "schema_web.json")
+	expected, err := os.ReadFile(snapshotPath)
+	if err != nil {
+		t.Fatalf("failed to read snapshot %s: %v", snapshotPath, err)
+	}
+
+	gotNorm := normalizeSchemaJSON(t, stdout)
+	wantNorm := normalizeSchemaJSON(t, string(expected))
+
+	if gotNorm != wantNorm {
+		t.Errorf("schema output does not match snapshot %s\n\nTo update: go build -o jlogs . && ./jlogs --app web --since 8760h --dir testdata/ --schema > e2e/testdata/schema_web.json",
+			snapshotPath)
+	}
+}
+
+func TestSchemaFlag_NoValues_Snapshot(t *testing.T) {
+	stdout, _, exitCode := runJlogs(t, "--app", "web", "--since", "8760h", "--dir", testdataDir(), "--schema", "--schema-values", "0")
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+
+	snapshotPath := filepath.Join(e2eTestdataDir(), "schema_web_no_values.json")
+	expected, err := os.ReadFile(snapshotPath)
+	if err != nil {
+		t.Fatalf("failed to read snapshot %s: %v", snapshotPath, err)
+	}
+
+	gotNorm := normalizeSchemaJSON(t, stdout)
+	wantNorm := normalizeSchemaJSON(t, string(expected))
+
+	if gotNorm != wantNorm {
+		t.Errorf("schema output does not match snapshot %s", snapshotPath)
+	}
+
+	// Verify no values keys present in no-values mode
+	var schema map[string]map[string]any
 	if err := json.Unmarshal([]byte(stdout), &schema); err != nil {
-		t.Fatalf("schema output is not valid JSON: %v\noutput: %s", err, stdout[:min(len(stdout), 500)])
+		t.Fatalf("schema output is not valid JSON: %v", err)
 	}
-	// message should be present
-	if _, ok := schema["message"]; !ok {
-		t.Error("expected 'message' in schema")
+	for path, entry := range schema {
+		if _, hasValues := entry["values"]; hasValues {
+			t.Errorf("field %q should not have values with --schema-values 0", path)
+		}
 	}
-	// pm2_timestamp should be present
-	if _, ok := schema["pm2_timestamp"]; !ok {
-		t.Error("expected 'pm2_timestamp' in schema")
+}
+
+func TestSchemaFlag_ValuesPresent(t *testing.T) {
+	stdout, _, exitCode := runJlogs(t, "--app", "web", "--since", "8760h", "--dir", testdataDir(), "--schema")
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
 	}
-	// message count should equal pm2_timestamp count (both present on every line)
-	msgCount := schema["message"]
-	tsCount := schema["pm2_timestamp"]
+
+	var schema map[string]map[string]any
+	if err := json.Unmarshal([]byte(stdout), &schema); err != nil {
+		t.Fatalf("schema output is not valid JSON: %v", err)
+	}
+
+	// pm2_type should have values (only "out" and "err")
+	pm2Type, ok := schema["pm2_type"]
+	if !ok {
+		t.Fatal("expected 'pm2_type' in schema")
+	}
+	vals, hasValues := pm2Type["values"]
+	if !hasValues {
+		t.Fatal("expected pm2_type to have values array")
+	}
+	valSlice, ok := vals.([]any)
+	if !ok {
+		t.Fatalf("expected values to be array, got %T", vals)
+	}
+	if len(valSlice) == 0 || len(valSlice) > 20 {
+		t.Errorf("expected pm2_type to have 1-20 values, got %d", len(valSlice))
+	}
+
+	// message count should equal pm2_timestamp count
+	msgCount := schema["message"]["count"]
+	tsCount := schema["pm2_timestamp"]["count"]
 	if msgCount != tsCount {
 		t.Errorf("expected message count (%v) to equal pm2_timestamp count (%v)", msgCount, tsCount)
 	}
@@ -382,9 +479,9 @@ func TestValidAppNoLogsInTimeRange(t *testing.T) {
 	if exitCode != 0 {
 		t.Errorf("expected exit code 0, got %d", exitCode)
 	}
-	// stdout should be empty array (no matching logs)
-	if strings.TrimSpace(stdout) != "[]" {
-		t.Errorf("expected [] on stdout, got: %s", stdout)
+	// stdout should be empty (no matching logs)
+	if strings.TrimSpace(stdout) != "" {
+		t.Errorf("expected empty stdout, got: %s", stdout)
 	}
 	// stderr should say no matching results, NOT "No apps matching"
 	if strings.Contains(stderr, "No apps matching") {
