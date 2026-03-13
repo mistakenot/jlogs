@@ -11,20 +11,22 @@ Download the latest binary for your platform from [GitHub Releases](https://gith
 ### Mac (Apple Silicon)
 
 ```bash
-curl -fsSL https://github.com/mistakenot/jlogs/releases/latest/download/jlogs-darwin-arm64 -o ~/bin/jlogs \
-  && chmod +x ~/bin/jlogs \
+mkdir -p ~/.local/bin \
+  && curl -fsSL https://github.com/mistakenot/jlogs/releases/latest/download/jlogs-darwin-arm64 -o ~/.local/bin/jlogs \
+  && chmod +x ~/.local/bin/jlogs \
   && jlogs --help
 ```
 
 ### Mac (Intel)
 
 ```bash
-curl -fsSL https://github.com/mistakenot/jlogs/releases/latest/download/jlogs-darwin-amd64 -o ~/bin/jlogs \
-  && chmod +x ~/bin/jlogs \
+mkdir -p ~/.local/bin \
+  && curl -fsSL https://github.com/mistakenot/jlogs/releases/latest/download/jlogs-darwin-amd64 -o ~/.local/bin/jlogs \
+  && chmod +x ~/.local/bin/jlogs \
   && jlogs --help
 ```
 
-> Make sure `~/bin` is on your `$PATH`. If it doesn't exist: `mkdir -p ~/bin && echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc`
+> If `~/.local/bin` isn't on your `$PATH`: `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc`
 
 ### Linux (x86_64)
 
