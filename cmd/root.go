@@ -79,7 +79,11 @@ Common jq patterns:
   # Access double-nested fields (second level stays in message_json)
   jlogs --app web --since 1h | jq '.message_json?.message_json?.component'
 
-Tip: use --schema to discover what fields are available before writing jq filters.`,
+Tip: use --schema to discover what fields are available before writing jq filters.
+
+Setup:
+  # Run preflight checks for PM2 in your project
+  jlogs init`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE:          run,

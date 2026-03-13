@@ -51,6 +51,7 @@ Scanner → Selection → Parser → Filter → Merge → Output (JSONL)
 ```
 
 - **`cmd/root.go`** — Cobra CLI setup, flag parsing, orchestrates the pipeline. Three modes: normal (JSONL output), `--stats` (per-app summary), `--schema` (field path discovery). Supports stdin when piped.
+- **`cmd/init.go`** — `jlogs init` subcommand. Runs preflight checks: PM2 log directory populated, ecosystem config present, JSON log mode enabled, and appends jlogs usage info to AGENTS.md/CLAUDE.md if present.
 - **`internal/scanner/`** — Discovers log files, probes content (not filenames) to detect PM2 format, extracts app names and time ranges.
 - **`internal/parser/`** — Parses PM2 JSON lines, unwraps nested JSON messages (up to 2 levels deep), flattens inner fields to top level. Uses ordered field lists (not maps) to preserve JSON output order.
 - **`internal/filter/`** — Time range filtering (relative durations like `30m`, absolute RFC 3339) and app name glob matching.

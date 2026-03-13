@@ -45,6 +45,93 @@ go build -o jlogs .
 mv jlogs /usr/local/bin/
 ```
 
+## Setting up PM2
+
+`jlogs` requires PM2 to be writing structured JSON log lines. Make sure your PM2 configuration has the following:
+
+### 1. Enable JSON log format
+
+In your PM2 ecosystem file (`ecosystem.config.js`), set `log_type` to `"json"` for each app:
+
+```js
+module.exports = {
+  apps: [
+    {
+      name: "web",
+      script: "server.js",
+      log_type: "json"
+    }
+  ]
+};
+```
+
+Without this, PM2 writes plain text logs that `jlogs` cannot parse.
+
+If you're starting apps from the command line, pass the `--log-type json` flag:
+
+```bash
+pm2 start server.js --name web --log-type json
+```
+
+### 2. Use the default log directory
+
+`jlogs` reads from `~/.pm2/logs/` by default. This is PM2's default log location, so no extra configuration is needed unless you've changed it. If you have customized PM2's log path, either:
+
+- Point `jlogs` at your custom directory with `--dir /your/custom/path/`, or
+- Remove any custom `out_file` / `error_file` settings from your ecosystem file to revert to the default location.
+
+### 3. Restart your apps
+
+After changing the log format, restart your apps so PM2 begins writing JSON:
+
+```bash
+pm2 restart all
+```
+
+Existing log files written before enabling JSON mode will contain plain text lines. `jlogs` skips non-JSON lines during file inspection, but those lines won't appear in output. To start fresh:
+
+```bash
+pm2 flush        # clears all log files
+pm2 restart all
+```
+
+### Verifying the setup
+
+Check that PM2 is writing JSON by inspecting a log file directly:
+
+```bash
+head -1 ~/.pm2/logs/web-out.log
+```
+
+You should see a JSON object like:
+
+```json
+{"message":"Server started on port 3000","timestamp":"2025-01-01T12:00:00Z","type":"out","process_id":0,"app_name":"web"}
+```
+
+If you see plain text instead, `log_type: "json"` is not active for that app.
+
+## Preflight checks
+
+Run `jlogs init` in your project directory to verify your PM2 setup:
+
+```bash
+$ jlogs init
+OK: PM2 log directory /home/user/.pm2/logs contains 12 file(s).
+OK: Found ecosystem.config.js
+OK: JSON log mode appears to be enabled.
+OK: Appended jlogs info to CLAUDE.md.
+
+All checks passed. Run `jlogs --help` for usage.
+```
+
+This checks:
+
+1. **PM2 log directory** — `~/.pm2/logs/` exists and contains log files.
+2. **Ecosystem config** — An `ecosystem.config.{js,cjs,ts}` file exists in the current directory.
+3. **JSON log mode** — The ecosystem config has `log_type: 'json'` enabled.
+4. **AI agent docs** — If `AGENTS.md` or `CLAUDE.md` exist, appends a short jlogs usage reference.
+
 ## Quick start
 
 ```bash
@@ -93,6 +180,12 @@ File names are irrelevant — `jlogs` reads actual content to determine what's i
 | `--version` | `-v` | Print version and exit. |
 
 A time filter (`--since`, `--after`, or `--before`) is always required.
+
+### Subcommands
+
+| Command | Description |
+|---|---|
+| `init` | Run preflight checks for PM2 setup and optionally update AI agent docs. |
 
 ## Time filtering
 
@@ -262,7 +355,8 @@ jlogs --app web --since 30m | grep "connection refused"
 ```
 ├── main.go                  # Entrypoint
 ├── cmd/
-│   └── root.go              # Cobra command, flag parsing, help text
+│   ├── root.go              # Cobra root command, flag parsing, help text
+│   └── init.go              # `jlogs init` preflight checks subcommand
 ├── internal/
 │   ├── scanner/             # File discovery and inspection
 │   ├── parser/              # PM2 line parsing, JSON unwrapping
