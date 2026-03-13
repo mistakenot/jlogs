@@ -41,6 +41,7 @@ coverage/
 *.test
 *.out
 go.work
+jlogs
 
 testdata
 .ntm

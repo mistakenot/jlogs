@@ -6,13 +6,37 @@ Built for AI coding agents and developers who need to quickly explore logs from 
 
 ## Installation
 
+Download the latest binary for your platform from [GitHub Releases](https://github.com/mistakenot/jlogs/releases/latest).
+
+### Mac (Apple Silicon)
+
 ```bash
-sudo curl -fsSL https://raw.githubusercontent.com/mistakenot/jlogs/main/jlogs -o /usr/local/bin/jlogs \
+curl -fsSL https://github.com/mistakenot/jlogs/releases/latest/download/jlogs-darwin-arm64 -o ~/bin/jlogs \
+  && chmod +x ~/bin/jlogs \
+  && jlogs --help
+```
+
+### Mac (Intel)
+
+```bash
+curl -fsSL https://github.com/mistakenot/jlogs/releases/latest/download/jlogs-darwin-amd64 -o ~/bin/jlogs \
+  && chmod +x ~/bin/jlogs \
+  && jlogs --help
+```
+
+> Make sure `~/bin` is on your `$PATH`. If it doesn't exist: `mkdir -p ~/bin && echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc`
+
+### Linux (x86_64)
+
+```bash
+sudo curl -fsSL https://github.com/mistakenot/jlogs/releases/latest/download/jlogs-linux-amd64 -o /usr/local/bin/jlogs \
   && sudo chmod +x /usr/local/bin/jlogs \
   && jlogs --help
 ```
 
-Or build from source (requires Go 1.25+):
+### Build from source
+
+Requires Go 1.25+:
 
 ```bash
 go build -o jlogs .
