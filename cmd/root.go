@@ -249,8 +249,8 @@ func readFileEntries(r io.Reader, appPattern string, tf filter.TimeFilter) ([]pa
 			continue
 		}
 
-		entry := parser.ProcessLine(pm2)
-		entries = append(entries, entry)
+		processed := parser.ProcessLine(pm2)
+		entries = append(entries, processed...)
 	}
 
 	return entries, sc.Err()

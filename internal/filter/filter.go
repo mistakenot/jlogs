@@ -15,7 +15,7 @@ type TimeFilter struct {
 
 // Config holds the full set of filter criteria.
 type Config struct {
-	AppPattern string     // glob pattern, e.g. "cc*", "web", "*"
+	AppPattern string // glob pattern, e.g. "cc*", "web", "*"
 	Time       TimeFilter
 }
 

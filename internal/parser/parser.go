@@ -106,13 +106,48 @@ func IsPM2Line(line []byte) bool {
 	return true
 }
 
-// ProcessLine converts a PM2Line into a LogEntry using the
-// flatten + preserve + enrich approach.
-func ProcessLine(pm2 PM2Line) LogEntry {
+// ProcessLine converts a PM2Line into one or more LogEntry values using the
+// flatten + preserve + enrich approach. When the message contains multiple
+// newline-separated sub-messages (PM2 batching), each sub-message becomes
+// its own LogEntry sharing the same PM2 metadata.
+func ProcessLine(pm2 PM2Line) []LogEntry {
+	// Split on newlines to handle PM2 batching.
+	subMessages := splitBatchedMessage(pm2.Message)
+
+	entries := make([]LogEntry, 0, len(subMessages))
+	for _, subMsg := range subMessages {
+		entry := processSingleMessage(subMsg, pm2)
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// splitBatchedMessage splits a message on newlines, filtering out empty
+// segments. A single message (with or without a trailing newline) returns
+// a single-element slice.
+func splitBatchedMessage(msg string) []string {
+	parts := strings.Split(msg, "\n")
+	var result []string
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	if len(result) == 0 {
+		// Preserve the original message even if it's whitespace-only.
+		return []string{msg}
+	}
+	return result
+}
+
+// processSingleMessage builds a LogEntry for a single (non-batched) message
+// string with the given PM2 metadata.
+func processSingleMessage(msg string, pm2 PM2Line) LogEntry {
 	var fields []Field
 
 	// Try to parse message as JSON object.
-	msgTrimmed := strings.TrimSpace(pm2.Message)
+	msgTrimmed := strings.TrimSpace(msg)
 	var innerObj map[string]any
 	isJSON := false
 	if len(msgTrimmed) > 0 && msgTrimmed[0] == '{' {
@@ -143,13 +178,13 @@ func ProcessLine(pm2 PM2Line) LogEntry {
 		}
 
 		// message — always the raw string.
-		fields = append(fields, Field{Key: "message", Value: pm2.Message})
+		fields = append(fields, Field{Key: "message", Value: msg})
 
 		// message_json — the full parsed object.
 		fields = append(fields, Field{Key: "message_json", Value: innerObj})
 	} else {
 		// Plain text: just message.
-		fields = append(fields, Field{Key: "message", Value: pm2.Message})
+		fields = append(fields, Field{Key: "message", Value: msg})
 	}
 
 	// PM2 metadata.
