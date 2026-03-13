@@ -33,7 +33,7 @@ go build -ldflags "-s -w -X pm2logs/cmd.version=v1.0.0" -o jlogs .
 
 ## Release Process
 
-Follow these steps for every commit after finishing work:
+Follow these steps for every commit after finishing work. Always create a new release tag if there have been any code changes.
 
 1. `gofmt -w .` — format all Go files
 2. `go build -o jlogs .` — compile
@@ -41,7 +41,7 @@ Follow these steps for every commit after finishing work:
 4. Update `todo.md` to reflect completed/remaining work
 5. `git add` and `git commit` with a descriptive message
 6. `git push`
-7. If releasing: `git tag vX.Y.Z && git push --tags` (semantic versioning)
+7. `git tag vX.Y.Z && git push --tags` (semantic versioning)
 
 ## Architecture
 
