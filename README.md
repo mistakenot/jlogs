@@ -14,7 +14,6 @@ Download the latest binary for your platform from [GitHub Releases](https://gith
 mkdir -p ~/.local/bin \
   && curl -fsSL https://github.com/mistakenot/jlogs/releases/latest/download/jlogs-darwin-arm64 -o ~/.local/bin/jlogs \
   && chmod +x ~/.local/bin/jlogs \
-  && xattr -d com.apple.quarantine ~/.local/bin/jlogs \
   && jlogs --help
 ```
 
@@ -24,7 +23,6 @@ mkdir -p ~/.local/bin \
 mkdir -p ~/.local/bin \
   && curl -fsSL https://github.com/mistakenot/jlogs/releases/latest/download/jlogs-darwin-amd64 -o ~/.local/bin/jlogs \
   && chmod +x ~/.local/bin/jlogs \
-  && xattr -d com.apple.quarantine ~/.local/bin/jlogs \
   && jlogs --help
 ```
 
