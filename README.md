@@ -6,7 +6,13 @@ Built for AI coding agents and developers who need to quickly explore logs from 
 
 ## Installation
 
-Build from source (requires Go 1.25+):
+```bash
+curl -fsSL https://raw.githubusercontent.com/mistakenot/jlogs/main/jlogs -o /usr/local/bin/jlogs \
+  && chmod +x /usr/local/bin/jlogs \
+  && jlogs --help
+```
+
+Or build from source (requires Go 1.25+):
 
 ```bash
 go build -o jlogs .
