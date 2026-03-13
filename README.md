@@ -7,8 +7,8 @@ Built for AI coding agents and developers who need to quickly explore logs from 
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mistakenot/jlogs/main/jlogs -o /usr/local/bin/jlogs \
-  && chmod +x /usr/local/bin/jlogs \
+sudo curl -fsSL https://raw.githubusercontent.com/mistakenot/jlogs/main/jlogs -o /usr/local/bin/jlogs \
+  && sudo chmod +x /usr/local/bin/jlogs \
   && jlogs --help
 ```
 
